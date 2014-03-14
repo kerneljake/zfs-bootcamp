@@ -1,0 +1,42 @@
+This simple MongoDB benchmark tool runs against a corpus of twitter tweets.
+It is a modified version of the mongo-perf benchmarking tool.
+This tool reads a pseudo-random document _id and increments the "favorite_count" field.
+It starts with a single thread and repeats with an increasing thread pool size: {1,2,4,6,8,12,16}
+
+Installation Steps
+
+install tweepy python library https://github.com/tweepy/tweepy
+
+get a twitter API key and configure firehose.py with your keys
+
+use python script to gather twitter stream to a file
+	$ firehose.py > twitter.firehose
+
+sanitize the twitter stream 
+	you will ^C out of firehose after you get enough corpus.
+	let's say you have 5826411 lines, and the last line is junk.
+	filter out the "limit" lines which twitter API inserts, and
+	change the "id" field to an incrementing "_id" field.
+	$ head -5826410 twitter.firehose | grep -v  '^{"limit":' | perl -pe '$i = 0 unless defined $i; s/"id": ([0-9]+)/"_id": $i/; $i++;' > tweets
+
+import the stream into MongoDB
+	$ mongoimport -d twitter -c tweets < tweets
+	
+build mongo-perf https://github.com/mongodb/mongo-perf
+	You will need to build mongodb and boost 1.49 library from source in
+	order to get mongo-perf to build.  See:
+	http://blog.beyondfog.com/mongodb-how-to-benchmark-and-test-performance-using-mongo-perf
+	# git clone https://github.com/mongodb/mongo-perf.git
+	# cd mongo-cxx-driver
+	# scons --extrapath=/opt/local    # this creates a library in the local directory
+	# cd ..
+	# scons benchmark
+	I had to hack SConstruct file to get it to build on linux, YMMV
+	env['ENV']['LD_LIBRARY_PATH'] = '/opt/local/lib'
+
+copy over benchmark.cpp to include the twitter tests, then recompile mongo-perf
+	IMPORTANT: you need to set #define NUM_DOCUMENTS and WORKING_SET for your corpus!
+
+run benchmark
+	add a label with -l so you can see it in mongo-perf GUI if you want
+	$ /usr/bin/time python runner.py --nolaunch --connection-string=127.0.0.1:27017 --local -l zfs-twittertest-201401291513
